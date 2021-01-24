@@ -1,3 +1,18 @@
+2021-01-23  Bart Schaefer  <schaefer@zsh.org>
+
+	* users/26406: Functions/Misc/zargs: preserve caller setopts
+
+2021-01-20  Jun-ichi Takimoto  <takimoto-j@kba.biglobe.ne.jp>
+
+	* 47849: Test/E01options.ztst, Test/V08zpty.ztst,
+	Test/W02jobs.ztst, Test/X02zlevi.ztst, Test/X03zlebindkey.ztst,
+	Test/X04zlehighlight.ztst, Test/Y01completion.ztst,
+	Test/Y02compmatch.ztst, Test/Y03arguments.ztst: do not skip
+	tests that require zpty on Cygwin
+
+	* Peiyuan Song: 47840: Src/Modules/zpty.c, configure.ac: make
+	zpty module work on Cygwin
+
 2020-12-12  dana  <dana@dana.is>
 
 	* unposted: NEWS: Catch up on new features
