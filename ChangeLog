@@ -1,3 +1,27 @@
+2021-02-06  Oliver Kiddle  <opk@zsh.org>
+
+	* 47919: Completion/BSD/Type/_login_classes,
+	Completion/Unix/Command/_env, Completion/Unix/Command/_pgrep,
+	Completion/Unix/Command/_su, Completion/Unix/Command/_user_admin:
+	use common function for completing BSD login classes and update for
+	options to env
+
+	* 47918: Completion/Linux/Command/_nsenter,
+	Completion/Linux/Command/_unshare: new util-linux completions
+
+2021-02-05  Bart Schaefer  <schaefer@zsh.org>
+
+	* unposted: Doc/Zsh/expn.yo: Add cindex entries for subsections
+
+2021-02-04  Bart Schaefer  <schaefer@zsh.org>
+
+	* 47895: Src/builtin.c, Test/D02glob.ztst: Remove trailing spaces
+	from "print -ac" output lines.
+
+	* 47865: Test/D02glob.ztst: More tests for restricted directories
+
+	* 47889: Etc/FAQ.yo: Update csh alias equivalences (section 2.3)
+
 2021-02-03  Joshua Krusell <js.shirin@gmail.com>
 
 	* 47899: Src/Modules/zutil.c, Test/V12zparseopts.ztst: Improved
