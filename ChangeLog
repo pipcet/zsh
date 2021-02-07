@@ -1,3 +1,37 @@
+2021-02-07  Oliver Kiddle  <opk@zsh.org>
+
+	* 47932: Completion/Linux/Command/_free, Completion/Unix/Command/_w,
+	Completion/Unix/Command/_pgrep, Completion/Unix/Command/_vmstat:
+	update completions for procps 3.3.16
+
+	* 47931: Completion/BSD/Command/_signify,
+	Completion/BSD/Command/_systat, Completion/Unix/Command/_locale,
+	Completion/Unix/Command/_netstat, Completion/Unix/Command/_top:
+	update completions for OpenBSD base up to 6.8
+
+	* 47930: Completion/BSD/Command/_freebsd-update,
+	Completion/Unix/Command/_uniq, Completion/Unix/Type/_diff_options:
+	update completions for FreeBSD base up to 12.2
+
+	* 47929: Completion/Zsh/Command/_zstyle: complete newer
+	possible values for the sort style
+
+	* based on github #62: oxiedi@yandex.ru:
+	Completion/Unix/Type/_date_formats: return proper exit status
+
+	* github #66: DCsunset: Completion/Unix/Command/_todo.sh:
+	Add more commands to _todo.sh
+
+	* github #63: oxiedi@yandex.ru: Completion/Base/Utility/_values:
+	fix regression caused by 44274, with sort style -o may be passed
+
+	* github #72 (tweaked): Semnodime: Completion/Unix/Command/_lldb:
+	fix unix command lldb tab-completion, args are space separated
+
+	* gitlab !16: aaaz <i1460889@mvrht.net>:
+	Completion/Unix/Command/_transmission: allow spaces between short
+	options and their parameters in transmission completion
+
 2021-02-06  Oliver Kiddle  <opk@zsh.org>
 
 	* 47919: Completion/BSD/Type/_login_classes,
