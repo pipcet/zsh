@@ -1,5 +1,12 @@
 2021-02-07  Oliver Kiddle  <opk@zsh.org>
 
+	* 47944: Completion/BSD/Command/_bsd_pkg,
+	Completion/BSD/Command/_pkgin, Completion/BSD/Command/_systat,
+	Completion/Unix/Command/_dmesg: update completions for NetBSD 9
+
+	* 47943: Completion/Unix/Command/_date,
+	Completion/Unix/Command/_xargs: update completions for DragonflyBSD
+
 	* 47932: Completion/Linux/Command/_free, Completion/Unix/Command/_w,
 	Completion/Unix/Command/_pgrep, Completion/Unix/Command/_vmstat:
 	update completions for procps 3.3.16
