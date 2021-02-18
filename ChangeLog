@@ -1,3 +1,18 @@
+2021-02-17  Peter Stephenson  <p.stephenson@samsung.com>
+
+	* 48073: Martijn Dekker: Doc/Zsh/builtins.yo, Src/builtin.c: fc
+	-s is POSIX version of fc -e -.
+
+2021-02-16  Peter Stephenson  <p.stephenson@samsung.com>
+
+	* 47876: Justtine Tunney: Src/exec.c: Add more cases where
+	shell scripts can be recognised from the first line as
+	described by POSIX.
+
+2021-02-16  Lawrence Velázquez  <vq@larryv.me>
+
+	* 47830: Doc/Zsh/contrib.yo, README: Fix some documentation typos
+
 2021-02-13  Oliver Kiddle  <opk@zsh.org>
 
 	* unposted (Daniel): Completion/Unix/Command/_locale:
