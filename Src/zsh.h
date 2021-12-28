@@ -1929,8 +1929,10 @@ struct tieddata {
 				   made read-only by the user               */
 #define PM_READONLY_SPECIAL (PM_SPECIAL|PM_READONLY|PM_RO_BY_DESIGN)
 #define PM_DONTIMPORT	(1<<22)	/* do not import this variable              */
+#define PM_DECLARED	(1<<22) /* explicitly named with typeset            */
 #define PM_RESTRICTED	(1<<23) /* cannot be changed in restricted mode     */
 #define PM_UNSET	(1<<24)	/* has null value                           */
+#define PM_DEFAULTED	(PM_DECLARED|PM_UNSET)
 #define PM_REMOVABLE	(1<<25)	/* special can be removed from paramtab     */
 #define PM_AUTOLOAD	(1<<26) /* autoloaded from module                   */
 #define PM_NORESTORE	(1<<27)	/* do not restore value of local special    */
@@ -2387,6 +2389,7 @@ enum {
     BSDECHO,
     CASEGLOB,
     CASEMATCH,
+    CASEPATHS,
     CBASES,
     CDABLEVARS,
     CDSILENT,
@@ -2535,6 +2538,7 @@ enum {
     TRANSIENTRPROMPT,
     TRAPSASYNC,
     TYPESETSILENT,
+    TYPESETTOUNSET,
     UNSET,
     VERBOSE,
     VIMODE,
@@ -2726,11 +2730,6 @@ struct ttyinfo {
 /* Bits to shift the background colour */
 #define TXT_ATTR_BG_COL_SHIFT    (40)
 
-/* Flag to use termcap AF sequence to set colour, if available */
-#define TXT_ATTR_FG_TERMCAP      0x1000
-/* Flag to use termcap AB sequence to set colour, if available */
-#define TXT_ATTR_BG_TERMCAP      0x2000
-
 /* Flag to indicate that foreground is a 24-bit colour */
 #define TXT_ATTR_FG_24BIT        0x4000
 /* Flag to indicate that background is a 24-bit colour */
@@ -2739,16 +2738,15 @@ struct ttyinfo {
 /* Things to turn on, including values for the colour elements */
 #define TXT_ATTR_ON_VALUES_MASK	\
     (TXT_ATTR_ON_MASK|TXT_ATTR_FG_COL_MASK|TXT_ATTR_BG_COL_MASK|\
-     TXT_ATTR_FG_TERMCAP|TXT_ATTR_BG_TERMCAP|\
      TXT_ATTR_FG_24BIT|TXT_ATTR_BG_24BIT)
 
 /* Mask out everything to do with setting a foreground colour */
 #define TXT_ATTR_FG_ON_MASK \
-    (TXTFGCOLOUR|TXT_ATTR_FG_COL_MASK|TXT_ATTR_FG_TERMCAP|TXT_ATTR_FG_24BIT)
+    (TXTFGCOLOUR|TXT_ATTR_FG_COL_MASK|TXT_ATTR_FG_24BIT)
 
 /* Mask out everything to do with setting a background colour */
 #define TXT_ATTR_BG_ON_MASK \
-    (TXTBGCOLOUR|TXT_ATTR_BG_COL_MASK|TXT_ATTR_BG_TERMCAP|TXT_ATTR_BG_24BIT)
+    (TXTBGCOLOUR|TXT_ATTR_BG_COL_MASK|TXT_ATTR_BG_24BIT)
 
 /* Mask out everything to do with activating colours */
 #define TXT_ATTR_COLOUR_ON_MASK			\

@@ -43,7 +43,7 @@ mod_export int contflag;
 /* # of break levels */
  
 /**/
-mod_export int breaks;
+mod_export volatile int breaks;
 
 /**/
 int
@@ -583,7 +583,7 @@ execif(Estate state, int do_exec)
 	cmdpop();
     } else {
 	noerrexit = olderrexit;
-	if (!retflag)
+	if (!retflag && !errflag)
 	    lastval = 0;
     }
     state->pc = end;

@@ -1108,7 +1108,7 @@ substnamedir(char *s)
 
 /* Returns the current username.  It caches the username *
  * and uid to try to avoid requerying the password files *
- * or NIS/NIS+ database.                                 */
+ * or other source.                                      */
 
 /**/
 uid_t cached_uid;
@@ -1119,7 +1119,7 @@ char *cached_username;
 char *
 get_username(void)
 {
-#ifdef HAVE_GETPWUID
+#ifdef USE_GETPWUID
     struct passwd *pswd;
     uid_t current_uid;
 
@@ -1132,9 +1132,9 @@ get_username(void)
 	else
 	    cached_username = ztrdup("");
     }
-#else /* !HAVE_GETPWUID */
+#else /* !USE_GETPWUID */
     cached_uid = getuid();
-#endif /* !HAVE_GETPWUID */
+#endif /* !USE_GETPWUID */
     return cached_username;
 }
 
@@ -1310,7 +1310,7 @@ getnameddir(char *name)
 	return str;
     }
 
-#ifdef HAVE_GETPWNAM
+#ifdef USE_GETPWNAM
     {
 	/* Retrieve an entry from the password table/database for this user. */
 	struct passwd *pw;
@@ -1326,7 +1326,7 @@ getnameddir(char *name)
 		return dupstring(pw->pw_dir);
 	}
     }
-#endif /* HAVE_GETPWNAM */
+#endif /* USE_GETPWNAM */
 
     /* There are no more possible sources of directory names, so give up. */
     return NULL;
@@ -1377,6 +1377,9 @@ mod_export void
 delprepromptfn(voidvoidfnptr_t func)
 {
     LinkNode ln;
+
+    if (!prepromptfns)
+	return;
 
     for (ln = firstnode(prepromptfns); ln; ln = nextnode(ln)) {
 	Prepromptfn ppdat = (Prepromptfn)getdata(ln);
@@ -1491,14 +1494,9 @@ deltimedfn(voidvoidfnptr_t func)
 /**/
 time_t lastmailcheck;
 
-/* the last time we checked the people in the WATCH variable */
-
-/**/
-time_t lastwatch;
-
 /*
  * Call a function given by "name" with optional arguments
- * "lnklist".  If these are present the first argument is the function name.
+ * "lnklst".  If these are present the first argument is the function name.
  *
  * If "arrayp" is not zero, we also look through
  * the array "name"_functions and execute functions found there.
@@ -1527,6 +1525,10 @@ callhookfunc(char *name, LinkList lnklst, int arrayp, int *retval)
     incompfunc = 0;
 
     if ((shfunc = getshfunc(name))) {
+	if (!lnklst) {
+	    lnklst = newlinklist();
+	    addlinknode(lnklst, name);
+	}
 	ret = doshfunc(shfunc, lnklst, 1);
 	stat = 0;
     }
@@ -1539,10 +1541,16 @@ callhookfunc(char *name, LinkList lnklst, int arrayp, int *retval)
 	memcpy(arrnam + namlen, HOOK_SUFFIX, HOOK_SUFFIX_LEN);
 
 	if ((arrptr = getaparam(arrnam))) {
+	    char **argarr = lnklst ? hlinklist2array(lnklst, 0) : NULL;
 	    arrptr = arrdup(arrptr);
 	    for (; *arrptr; arrptr++) {
 		if ((shfunc = getshfunc(*arrptr))) {
-		    int newret = doshfunc(shfunc, lnklst, 1);
+		    int newret, i = 1;
+		    LinkList arg0 = newlinklist();
+		    addlinknode(arg0, *arrptr);
+		    while (argarr && argarr[i])
+			addlinknode(arg0, argarr[i++]);
+		    newret = doshfunc(shfunc, arg0, 1);
 		    if (!ret)
 			ret = newret;
 		    stat = 0;
@@ -1621,17 +1629,6 @@ preprompt(void)
     if (period && ((zlong)time(NULL) > (zlong)lastperiodic + period) &&
 	!callhookfunc("periodic", NULL, 1, NULL))
 	lastperiodic = time(NULL);
-    if (errflag)
-	return;
-
-    /* If WATCH is set, then check for the *
-     * specified login/logout events.      */
-    if (watch) {
-	if ((int) difftime(time(NULL), lastwatch) > getiparam("LOGCHECK")) {
-	    dowatch();
-	    lastwatch = time(NULL);
-	}
-    }
     if (errflag)
 	return;
 
@@ -5912,8 +5909,11 @@ zexpandtabs(const char *s, int len, int width, int startpos, FILE *fout,
 		memset(&mbs, 0, sizeof(mbs));
 		s++;
 		len--;
-	    } else if (ret == MB_INCOMPLETE) {
+	    } else if (ret == MB_INCOMPLETE ||
 		/* incomplete at end --- assume likewise, best we've got */
+	               ret == 0) {
+		/* NUL character returns 0, which would loop infinitely, so advance
+		 * one byte in this case too */
 		s++;
 		len--;
 	    } else {
@@ -6694,13 +6694,21 @@ ucs4toutf8(char *dest, unsigned int wval)
  *
  * The return value is unmetafied unless GETKEY_DOLLAR_QUOTE is
  * in use.
+ *
+ * If GETKEY_SINGLE_CHAR is set in how, a next character in the given
+ * string is parsed, and the character code for it is returned in misc.
+ * The return value of the function is a pointer to the byte in the
+ * given string from where the next parsing should start. If the next
+ * character can't be found then NULL is returned.
+ * CAUTION: Currently, GETKEY_SINGLE_CHAR can be used only via
+ *          GETKEYS_MATH. Other use of it may cause trouble.
  */
 
 /**/
 mod_export char *
 getkeystring(char *s, int *len, int how, int *misc)
 {
-    char *buf, tmp[1];
+    char *buf = NULL, tmp[1];
     char *t, *tdest = NULL, *u = NULL, *sstart = s, *tbuf = NULL;
     char svchar = '\0';
     int meta = 0, control = 0, ignoring = 0;
@@ -6726,9 +6734,11 @@ getkeystring(char *s, int *len, int how, int *misc)
     DPUTS((how & (GETKEY_DOLLAR_QUOTE|GETKEY_SINGLE_CHAR)) ==
 	  (GETKEY_DOLLAR_QUOTE|GETKEY_SINGLE_CHAR),
 	  "BUG: incompatible options in getkeystring");
+    DPUTS((how & GETKEY_SINGLE_CHAR) && (how != GETKEYS_MATH),
+	  "BUG: unsupported options in getkeystring");
 
     if (how & GETKEY_SINGLE_CHAR)
-	t = buf = tmp;
+	t = tmp;
     else {
 	/* Length including terminating NULL */
 	int maxlen = 1;
@@ -7162,13 +7172,20 @@ getkeystring(char *s, int *len, int how, int *misc)
      */
     DPUTS((how & (GETKEY_DOLLAR_QUOTE|GETKEY_UPDATE_OFFSET)) ==
 	  GETKEY_DOLLAR_QUOTE, "BUG: unterminated $' substitution");
-    *t = '\0';
-    if (how & GETKEY_DOLLAR_QUOTE)
-	*tdest = '\0';
-    if (how & GETKEY_SINGLE_CHAR)
+
+    if (how & GETKEY_SINGLE_CHAR) {
+	/* couldn't find a character */
 	*misc = 0;
-    else
-	*len = ((how & GETKEY_DOLLAR_QUOTE) ? tdest : t) - buf;
+	return NULL;
+    }
+    if (how & GETKEY_DOLLAR_QUOTE) {
+	*tdest = '\0';
+	*len = tdest - buf;
+    }
+    else {
+	*t = '\0';
+	*len = t - buf;
+    }
     return buf;
 }
 

@@ -765,7 +765,7 @@ filesubstr(char **namptr, int assign)
 		*namptr = dyncat(res, ptr2+1);
 		return 1;
 	    }
-	    if (isset(NOMATCH))
+	    if (isset(NOMATCH) && isset(EXECOPT))
 		zerr("no directory expansion: ~[%s]", tmp);
 	    return 0;
 	} else if (!inblank(str[1]) && isend(*ptr) &&
@@ -2259,9 +2259,31 @@ paramsubst(LinkList l, LinkNode n, char **str, int qt, int pf_flags,
 		    break;
 
 		default:
-		  flagerr:
-		    zerr("error in flags");
-		    return NULL;
+		flagerr:
+		    {
+			/* 
+			 * We're trying to output the string that failed to
+			 * parse and the offset of the parse error within that.
+			 *
+			 * The string is *str.  It hasn't been changed since
+			 * entry to this function, I think, except that the
+			 * first non-variable-declaration line in this function
+			 * (currently the 238th line in this function)
+			 * writes a NUL to the first place in *str, so we'll
+			 * compensate by outputting the dollar sign manually.
+			 */
+			char *str_copy_for_output = dupstring(*str + 1);
+
+			/* 
+			 * Convert to a 1-based offset, because the shell
+			 * language is 1-based by default.
+			 */
+			zlong offset = s - *str + 1;
+
+			untokenize(str_copy_for_output);
+			zerr("error in flags near position %z in '$%s'", offset, str_copy_for_output);
+			return NULL;
+		    }
 		}
 	    }
 	    s++;
@@ -2541,7 +2563,8 @@ paramsubst(LinkList l, LinkNode n, char **str, int qt, int pf_flags,
 	     * Handle the (t) flag: value now becomes the type
 	     * information for the parameter.
 	     */
-	    if (v && v->pm && !(v->pm->node.flags & PM_UNSET)) {
+	    if (v && v->pm && ((v->pm->node.flags & PM_DECLARED) ||
+			       !(v->pm->node.flags & PM_UNSET))) {
 		int f = v->pm->node.flags;
 
 		switch (PM_TYPE(f)) {
@@ -3339,13 +3362,15 @@ colonsubscript:
 		    return NULL;
 		}
 		if (*check_offset2) {
+		    char *nextp;
 		    check_offset = check_colon_subscript(check_offset2 + 1,
-							 &check_offset2);
-		    if (*check_offset2 && *check_offset2 != ':') {
-			zerr("invalid length: %s", check_offset);
-			return NULL;
-		    }
+							 &nextp);
 		    if (check_offset) {
+			check_offset2 = nextp;
+			if (*check_offset2 && *check_offset2 != ':') {
+			    zerr("invalid length: %s", check_offset);
+			    return NULL;
+			}
 			length = mathevali(check_offset);
 			length_set = 1;
 			if (errflag)

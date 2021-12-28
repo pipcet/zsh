@@ -1035,7 +1035,7 @@ freecadef(Cadef d)
 	freecaargs(d->rest);
 	zsfree(d->nonarg);
 	if (d->single)
-	    zfree(d->single, 256 * sizeof(Caopt));
+	    zfree(d->single, 188 * sizeof(Caopt));
 	zfree(d, sizeof(*d));
 	d = s;
     }
@@ -1077,6 +1077,21 @@ bslashcolon(char *s)
     *p = '\0';
 
     return r;
+}
+
+/* Get an index into the single array used in struct cadef
+ * opt is the option letter and pre is either - or +
+ * we only keep an array for the 94 ASCII characters from ! to ~ so
+ * with - and + prefixes, the array is double that at 188 elements
+ * returns -1 if opt is out-of-range
+ */
+static int
+single_index(char pre, char opt)
+{
+    if (opt <= 0x20 || opt > 0x7e)
+	return -1;
+
+    return opt + (pre == '-' ? -0x21 : 94 - 0x21);
 }
 
 /* Parse an argument definition. */
@@ -1151,8 +1166,8 @@ alloc_cadef(char **args, int single, char *match, char *nonarg, int flags)
     ret->lastt = time(0);
     ret->set = NULL;
     if (single) {
-	ret->single = (Caopt *) zalloc(256 * sizeof(Caopt));
-	memset(ret->single, 0, 256 * sizeof(Caopt));
+	ret->single = (Caopt *) zalloc(188 * sizeof(Caopt));
+	memset(ret->single, 0, 188 * sizeof(Caopt));
     } else
 	ret->single = NULL;
     ret->match = ztrdup(match);
@@ -1558,9 +1573,10 @@ parse_cadef(char *nam, char **args)
 	     * pointer for the definition in the array for fast lookup.
 	     * But don't treat '--' as a single option called '-' */
 
-
-	    if (single && name[1] && !name[2] && name[1] != '-')
-		ret->single[STOUC(name[1])] = opt;
+	    if (single && name[1] && !name[2] && name[1] != '-') {
+		int sidx = single_index(*name, name[1]);
+		if (sidx >= 0) ret->single[sidx] = opt;
+	    }
 
 	    if (again == 1) {
 		/* Do it all again for `*-...'. */
@@ -1738,11 +1754,12 @@ ca_get_sopt(Cadef d, char *line, char **end, LinkList *lp)
     Caopt p, pp = NULL;
     char pre = *line++;
     LinkList l = NULL;
+    int sidx;
 
     *lp = NULL;
     for (p = NULL; *line; line++) {
-	if ((p = d->single[STOUC(*line)]) && p->active &&
-	    p->args && p->name[0] == pre) {
+	if ((sidx = single_index(pre, *line)) != -1 &&
+	    (p = d->single[sidx]) && p->active && p->args) {
 	    if (p->type == CAO_NEXT) {
 		if (!l)
 		    *lp = l = newlinklist();
@@ -1813,7 +1830,7 @@ ca_get_arg(Cadef d, int n)
 /* Mark options as inactive.
  *   d: option definitions for a set
  *   pass either:
- *     xor: a list if exclusions
+ *     xor: a list of exclusions
  *     opts: if set, all options excluded leaving only nornal/rest arguments */
 
 static void
@@ -2031,9 +2048,9 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
     state.def = state.ddef = NULL;
     state.curopt = state.dopt = NULL;
     state.argbeg = state.optbeg = state.nargbeg = state.restbeg = state.actopts =
-	state.nth = state.inopt = state.inarg = state.opt = state.arg = 1;
+	state.nth = state.inarg = state.opt = state.arg = 1;
     state.argend = argend = arrlen(compwords) - 1;
-    state.singles = state.oopt = 0;
+    state.inopt = state.singles = state.oopt = 0;
     state.curpos = compcurrent;
     state.args = znewlinklist();
     state.oargs = (LinkList *) zalloc(d->nopts * sizeof(LinkList));
@@ -2080,9 +2097,14 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
         remnulargs(line);
         untokenize(line);
 
-	ca_inactive(d, argxor, cur - 1, 0);
-	if ((d->flags & CDF_SEP) && cur != compcurrent && !strcmp(line, "--")) {
+	if (argxor) {
+	    ca_inactive(d, argxor, cur - 1, 0);
+	    argxor = NULL;
+	}
+	if ((d->flags & CDF_SEP) && cur != compcurrent && state.actopts &&
+		!strcmp(line, "--")) {
 	    ca_inactive(d, NULL, cur, 1);
+	    state.actopts = 0;
 	    continue;
 	}
 
@@ -2136,7 +2158,8 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
 
 	/* See if it's an option. */
 
-	if (state.opt == 2 && (state.curopt = ca_get_opt(d, line, 0, &pe)) &&
+	if (state.opt == 2 && (*line == '-' || *line == '+') &&
+	    (state.curopt = ca_get_opt(d, line, 0, &pe)) &&
 	    (state.curopt->type == CAO_OEQUAL ?
 	     (compwords[cur] || pe[-1] == '=') :
 	     (state.curopt->type == CAO_EQUAL ?
@@ -2184,12 +2207,14 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
 		state.curopt = NULL;
 	    }
 	} else if (state.opt == 2 && d->single &&
+		   (*line == '-' || *line == '+') &&
 		   ((state.curopt = ca_get_sopt(d, line, &pe, &sopts)) ||
 		    (cur != compcurrent && sopts && nonempty(sopts)))) {
 	    /* Or maybe it's a single-letter option? */
 
 	    char *p;
 	    Caopt tmpopt;
+	    int sidx;
 
 	    if (cur != compcurrent && sopts && nonempty(sopts))
 		state.curopt = (Caopt) uremnode(sopts, firstnode(sopts));
@@ -2207,7 +2232,8 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
 	    state.singles = (!pe || !*pe);
 
 	    for (p = line + 1; p < pe; p++) {
-		if ((tmpopt = d->single[STOUC(*p)])) {
+		if ((sidx = single_index(*line, *p)) != -1 &&
+		    (tmpopt = d->single[sidx])) {
 		    if (!state.oargs[tmpopt->num])
 			state.oargs[tmpopt->num] = znewlinklist();
 
@@ -2235,11 +2261,17 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
 	} else if (multi && (*line == '-' || *line == '+') && cur != compcurrent
 		&& (ca_foreign_opt(d, all, line)))
 	    return 1;
-	else if (state.arg &&
-		 (!napat || cur <= compcurrent || !pattry(napat, line))) {
+	else if (state.arg && cur <= compcurrent) {
 	    /* Otherwise it's a normal argument. */
-	    if (napat && cur <= compcurrent)
+
+	    /* test pattern passed to -A. if it matches treat this as an unknown
+	     * option and continue to the next word */
+	    if (napat && cur < compcurrent && state.actopts) {
+		if (pattry(napat, line))
+		    continue;
 		ca_inactive(d, NULL, cur + 1, 1);
+		state.actopts = 0;
+	    }
 
 	    arglast = 1;
 	    /* if this is the first normal arg after an option, may have been
@@ -2293,7 +2325,7 @@ ca_parse_line(Cadef d, Cadef all, int multi, int first)
             if (adef)
                 state.oopt = adef->num - state.nth;
 
-	    if (state.def)
+	    if (state.def && cur != compcurrent)
 		argxor = state.def->xor;
 
 	    if (state.def && state.def->type != CAA_NORMAL &&

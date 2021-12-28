@@ -89,7 +89,6 @@ static struct builtin builtins[] =
     BUILTIN("kill", BINF_HANDLES_OPTS, bin_kill, 0, -1, 0, NULL, NULL),
     BUILTIN("let", 0, bin_let, 1, -1, 0, NULL, NULL),
     BUILTIN("local", BINF_PLUSOPTS | BINF_MAGICEQUALS | BINF_PSPECIAL | BINF_ASSIGN, (HandlerFunc)bin_typeset, 0, -1, 0, "AE:%F:%HL:%R:%TUZ:%ahi:%lp:%rtux", NULL),
-    BUILTIN("log", 0, bin_log, 0, 0, 0, NULL, NULL),
     BUILTIN("logout", 0, bin_break, 0, 1, BIN_LOGOUT, NULL, NULL),
 
 #if defined(ZSH_MEM) & defined(ZSH_MEM_DEBUG)
@@ -2024,7 +2023,7 @@ typeset_setwidth(const char * name, Param pm, Options ops, int on, int always)
 
 /**/
 static Param
-typeset_single(char *cname, char *pname, Param pm, UNUSED(int func),
+typeset_single(char *cname, char *pname, Param pm, int func,
 	       int on, int off, int roff, Asgment asg, Param altpm,
 	       Options ops, int joinchar)
 {
@@ -2491,6 +2490,8 @@ typeset_single(char *cname, char *pname, Param pm, UNUSED(int func),
 		return NULL;
 	    }
 	}
+	if (isset(TYPESETTOUNSET))
+	    pm->node.flags |= PM_DEFAULTED;
     } else {
 	if (idigit(*pname))
 	    zerrnam(cname, "not an identifier: %s", pname);
@@ -2613,7 +2614,12 @@ bin_typeset(char *name, char **argv, LinkList assigns, Options ops, int func)
     int on = 0, off = 0, roff, bit = PM_ARRAY;
     int i;
     int returnval = 0, printflags = 0;
-    int hasargs;
+    int hasargs = *argv != NULL || (assigns && firstnode(assigns));
+
+    /* POSIXBUILTINS is set for bash/ksh and both ignore -p with args */
+    if ((func == BIN_READONLY || func == BIN_EXPORT) &&
+	isset(POSIXBUILTINS) && hasargs)
+	ops->ind['p'] = 0;
 
     /* hash -f is really the builtin `functions' */
     if (OPT_ISSET(ops,'f'))
@@ -2693,7 +2699,6 @@ bin_typeset(char *name, char **argv, LinkList assigns, Options ops, int func)
 	    /* -p0 treated as -p for consistency */
 	}
     }
-    hasargs = *argv != NULL || (assigns && firstnode(assigns));
     if (!hasargs) {
 	int exclude = 0;
 	if (!OPT_ISSET(ops,'p')) {
@@ -2836,7 +2841,7 @@ bin_typeset(char *name, char **argv, LinkList assigns, Options ops, int func)
 	    unqueue_signals();
 	    return 1;
 	} else if (pm) {
-	    if (!(pm->node.flags & PM_UNSET)
+	    if ((!(pm->node.flags & PM_UNSET) || pm->node.flags & PM_DECLARED)
 		&& (locallevel == pm->level || !(on & PM_LOCAL))) {
 		if (pm->node.flags & PM_TIED) {
 		    if (PM_TYPE(pm->node.flags) != PM_SCALAR) {
@@ -2889,6 +2894,8 @@ bin_typeset(char *name, char **argv, LinkList assigns, Options ops, int func)
 	 *
 	 * Don't attempt to set it yet, it's too early
 	 * to be exported properly.
+	 *
+	 * This may create the array with PM_DEFAULTED.
 	 */
 	asg2.name = asg->name;
 	asg2.flags = 0;
@@ -2930,8 +2937,12 @@ bin_typeset(char *name, char **argv, LinkList assigns, Options ops, int func)
 	if (asg->value.array) {
 	    int flags = (asg->flags & ASG_KEY_VALUE) ? ASSPM_KEY_VALUE : 0;
 	    assignaparam(asg->name, zlinklist2array(asg->value.array, 1), flags);
-	} else if (oldval)
-	    assignsparam(asg0.name, oldval, 0);
+	} else if (asg0.value.scalar || oldval) {
+	    /* We have to undo what we did wrong with asg2 */
+	    apm->node.flags &= ~PM_DEFAULTED;
+	    if (oldval)
+		assignsparam(asg0.name, oldval, 0);
+	}
 	unqueue_signals();
 
 	return 0;
@@ -3712,14 +3723,12 @@ bin_unset(char *name, char **argv, Options ops, int func)
     while ((s = *argv++)) {
 	char *ss = strchr(s, '['), *subscript = 0;
 	if (ss) {
-	    char *sse;
+	    char *sse = ss + strlen(ss)-1;
 	    *ss = 0;
-	    if ((sse = parse_subscript(ss+1, 1, ']'))) {
+	    if (*sse == ']') {
 		*sse = 0;
 		subscript = dupstring(ss+1);
 		*sse = ']';
-		remnulargs(subscript);
-		untokenize(subscript);
 	    }
 	}
 	if ((ss && !subscript) || !isident(s)) {
@@ -5556,6 +5565,11 @@ bin_getopts(UNUSED(char *name), char **argv, UNUSED(Options ops), UNUSED(int fun
     /* check for legality */
     if(opch == ':' || !(p = memchr(optstr, opch, lenoptstr))) {
 	p = "?";
+	/* Keep OPTIND correct if the user doesn't return after the error */
+	if (isset(POSIXBUILTINS)) {
+	    optcind = 0;
+	    zoptind++;
+	}
 	zsfree(zoptarg);
 	setsparam(var, ztrdup(p));
 	if(quiet) {
@@ -5572,6 +5586,11 @@ bin_getopts(UNUSED(char *name), char **argv, UNUSED(Options ops), UNUSED(int fun
     if(p[1] == ':') {
 	if(optcind == lenstr) {
 	    if(!args[zoptind]) {
+		/* Fix OPTIND as above */
+		if (isset(POSIXBUILTINS)) {
+		    optcind = 0;
+		    zoptind++;
+		}
 		zsfree(zoptarg);
 		if(quiet) {
 		    setsparam(var, ztrdup(":"));
@@ -5613,13 +5632,16 @@ bin_getopts(UNUSED(char *name), char **argv, UNUSED(Options ops), UNUSED(int fun
  */
 
 /**/
-mod_export int
-exit_pending;
+mod_export volatile int exit_pending;
 
 /* Shell level at which we exit if exit_pending */
 /**/
-mod_export int
-exit_level;
+mod_export volatile int exit_level;
+
+/* we have printed a 'you have stopped (running) jobs.' message */
+
+/**/
+mod_export volatile int stopmsg;
 
 /* break, bye, continue, exit, logout, return -- most of these take   *
  * one numeric argument, and the other (logout) is related to return. *
@@ -5711,11 +5733,6 @@ bin_break(char *name, char **argv, UNUSED(Options ops), int func)
     return 0;
 }
 
-/* we have printed a 'you have stopped (running) jobs.' message */
-
-/**/
-mod_export int stopmsg;
-
 /* check to see if user has jobs running/stopped */
 
 /**/
@@ -5806,8 +5823,11 @@ zexit(int val, enum zexit_t from_where)
      * a later value always overrides an earlier.
      */
     exit_val = val;
-    if (shell_exiting == -1)
+    if (shell_exiting == -1) {
+	retflag = 1;
+	breaks = loops;
 	return;
+    }
 
     if (isset(MONITOR) && !stopmsg && from_where != ZEXIT_SIGNAL) {
 	scanjobs();    /* check if jobs need printing           */

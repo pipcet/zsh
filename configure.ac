@@ -28,7 +28,7 @@ dnl
 AC_INIT
 AC_CONFIG_SRCDIR([Src/zsh.h])
 AC_PREREQ([2.69])
-AC_CONFIG_HEADER(config.h)
+AC_CONFIG_HEADERS([config.h])
 
 dnl What version of zsh are we building ?
 . ${srcdir}/Config/version.mk
@@ -657,8 +657,6 @@ dnl ------------------
 dnl CHECK HEADER FILES
 dnl ------------------
 AC_HEADER_DIRENT
-AC_HEADER_STDC
-AC_HEADER_TIME
 AC_HEADER_STAT
 AC_HEADER_SYS_WAIT
 
@@ -1137,8 +1135,7 @@ dnl Check for sigset_t.  Currently I'm looking in
 dnl <sys/types.h> and <signal.h>.  Others might need
 dnl to be added.
 AC_CACHE_CHECK(for sigset_t, zsh_cv_type_sigset_t,
-[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#define _POSIX_C_SOURCE 200809L
-#include <sys/types.h>
+[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
 #include <signal.h>]], [[sigset_t tempsigset;]])],[zsh_cv_type_sigset_t=yes],[zsh_cv_type_sigset_t=no])])
 AH_TEMPLATE([sigset_t],
 [Define to `unsigned int' if <sys/types.h> or <signal.h> doesn't define])
@@ -2067,44 +2064,18 @@ AH_TEMPLATE([HAVE_SETPROCTITLE],
 AC_CHECK_FUNC(setproctitle,AC_DEFINE(HAVE_SETPROCTITLE),
 AC_SEARCH_LIBS(setproctitle,util,AC_DEFINE(HAVE_SETPROCTITLE)))
 
-dnl -------------
-dnl CHECK FOR NIS
-dnl -------------
-AH_TEMPLATE([HAVE_NIS],
-[Define to 1 if you have NIS.])
-AC_CACHE_CHECK(for NIS, zsh_cv_sys_nis,
-[test -f /usr/bin/ypcat && /usr/bin/ypcat passwd.byname > /dev/null 2>&1 && \
-zsh_cv_sys_nis=yes || zsh_cv_sys_nis=no])
-if test x$zsh_cv_sys_nis = xyes; then
-  AC_DEFINE(HAVE_NIS)
-dnl RPC is removed from glibc-2.26 and replaced by libtirpc
-  AC_CHECK_HEADER(rpc/rpc.h, [],
-  [test -f /usr/include/tirpc/rpc/rpc.h && \
-   CPPFLAGS="$CPPFLAGS -I/usr/include/tirpc"])
-dnl Some systems (Solaris 2.x, Linux Redhat 5.x) require
-dnl libnsl (Network Services Library) to find yp_all
-  AC_SEARCH_LIBS(yp_all, nsl)
-fi
-
-dnl -----------------
-dnl CHECK FOR NISPLUS
-dnl -----------------
-AH_TEMPLATE([HAVE_NIS_PLUS],
-[Define to 1 if you have NISPLUS.])
-AC_CACHE_CHECK(for NIS+, zsh_cv_sys_nis_plus,
-[test x$ac_cv_func_nis_list = xyes && test -f /usr/bin/nisls && \
- /usr/bin/nisls > /dev/null 2>&1 && \
-zsh_cv_sys_nis_plus=yes || zsh_cv_sys_nis_plus=no])
-if test x$zsh_cv_sys_nis_plus = xyes; then
-  AC_DEFINE(HAVE_NIS_PLUS)
-fi
+dnl CHECK FOR prctl() FOR jobs -Z / ARGV0 when checking with ps -e
+AH_TEMPLATE([HAVE_PRCTL],
+[Define to 1 if the system supports `prctl' to change process name])
+AC_CHECK_FUNC(prctl,AC_DEFINE(HAVE_PRCTL),
+AC_SEARCH_LIBS(prctl,c,AC_DEFINE(HAVE_PRCTL)))
 
 dnl ----------------------------------------
 dnl CHECK FOR LOCATION OF {U,W}TMP{,X} FILES
 dnl ----------------------------------------
 zsh_PATH_UTMP(utmp)
 zsh_PATH_UTMP(wtmp)
-zsh_PATH_UTMP(utmpx)
+zsh_PATH_UTMP(utmpx,utx.active)
 zsh_PATH_UTMP(wtmpx)
 
 dnl -------------------

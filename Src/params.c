@@ -63,7 +63,6 @@ char **pparams,		/* $argv        */
      **mailpath,	/* $mailpath    */
      **manpath,		/* $manpath     */
      **psvar,		/* $psvar       */
-     **watch,		/* $watch       */
      **zsh_eval_context; /* $zsh_eval_context */
 /**/
 mod_export
@@ -98,8 +97,10 @@ char *ifs,		/* $IFS         */
      *pwd;		/* $PWD         */
 
 /**/
-mod_export
-zlong lastval,		/* $?           */
+mod_export volatile zlong
+     lastval;		/* $?           */
+/**/
+mod_export zlong
      mypid,		/* $$           */
      lastpid,		/* $!           */
      zterm_columns,	/* $COLUMNS     */
@@ -192,6 +193,10 @@ mod_export const struct gsu_hash stdhash_gsu =
 mod_export const struct gsu_hash nullsethash_gsu =
 { hashgetfn, nullsethashfn, nullunsetfn };
 
+/**/
+mod_export const struct gsu_scalar colonarr_gsu =
+{ colonarrgetfn, colonarrsetfn, stdunsetfn };
+
 
 /* Non standard methods (not exported) */
 static const struct gsu_integer pound_gsu =
@@ -256,9 +261,6 @@ static const struct gsu_integer varint_readonly_gsu =
 { intvargetfn, nullintsetfn, stdunsetfn };
 static const struct gsu_integer zlevar_gsu =
 { intvargetfn, zlevarsetfn, stdunsetfn };
-
-static const struct gsu_scalar colonarr_gsu =
-{ colonarrgetfn, colonarrsetfn, stdunsetfn };
 
 static const struct gsu_integer argc_gsu =
 { poundgetfn, nullintsetfn, stdunsetfn };
@@ -396,7 +398,6 @@ IPDEF8("CDPATH", &cdpath, "cdpath", PM_TIED),
 IPDEF8("FIGNORE", &fignore, "fignore", PM_TIED),
 IPDEF8("FPATH", &fpath, "fpath", PM_TIED),
 IPDEF8("MAILPATH", &mailpath, "mailpath", PM_TIED),
-IPDEF8("WATCH", &watch, "watch", PM_TIED),
 IPDEF8("PATH", &path, "path", PM_RESTRICTED|PM_TIED),
 IPDEF8("PSVAR", &psvar, "psvar", PM_TIED),
 IPDEF8("ZSH_EVAL_CONTEXT", &zsh_eval_context, "zsh_eval_context", PM_READONLY_SPECIAL|PM_TIED),
@@ -428,7 +429,6 @@ IPDEF9("fpath", &fpath, "FPATH", PM_TIED),
 IPDEF9("mailpath", &mailpath, "MAILPATH", PM_TIED),
 IPDEF9("manpath", &manpath, "MANPATH", PM_TIED),
 IPDEF9("psvar", &psvar, "PSVAR", PM_TIED),
-IPDEF9("watch", &watch, "WATCH", PM_TIED),
 
 IPDEF9("zsh_eval_context", &zsh_eval_context, "ZSH_EVAL_CONTEXT", PM_TIED|PM_READONLY_SPECIAL),
 
@@ -451,7 +451,6 @@ IPDEF8("CDPATH", &cdpath, NULL, 0),
 IPDEF8("FIGNORE", &fignore, NULL, 0),
 IPDEF8("FPATH", &fpath, NULL, 0),
 IPDEF8("MAILPATH", &mailpath, NULL, 0),
-IPDEF8("WATCH", &watch, NULL, 0),
 IPDEF8("PATH", &path, NULL, PM_RESTRICTED),
 IPDEF8("PSVAR", &psvar, NULL, 0),
 IPDEF8("ZSH_EVAL_CONTEXT", &zsh_eval_context, NULL, PM_READONLY_SPECIAL),
@@ -759,7 +758,7 @@ split_env_string(char *env, char **name, char **value)
  */
 static int dontimport(int flags)
 {
-    /* If explicitly marked as don't export */
+    /* If explicitly marked as don't import */
     if (flags & PM_DONTIMPORT)
 	return 1;
     /* If value already exported */
@@ -819,7 +818,6 @@ createparamtable(void)
      * given them in the environment.                           */
     opts[ALLEXPORT] = 0;
     setiparam("MAILCHECK", 60);
-    setiparam("LOGCHECK", 60);
     setiparam("KEYTIMEOUT", 40);
     setiparam("LISTMAX", 100);
     /*
@@ -834,16 +832,18 @@ createparamtable(void)
      */
     setsparam("TMPPREFIX", ztrdup_metafy(DEFAULT_TMPPREFIX));
     setsparam("TIMEFMT", ztrdup_metafy(DEFAULT_TIMEFMT));
-    setsparam("WATCHFMT", ztrdup_metafy(default_watchfmt));
 
     hostnam = (char *)zalloc(256);
     gethostname(hostnam, 256);
     setsparam("HOST", ztrdup_metafy(hostnam));
     zfree(hostnam, 256);
 
-    setsparam("LOGNAME",
-	      ztrdup_metafy((str = getlogin()) && *str ?
-			    str : cached_username));
+    setsparam("LOGNAME", ztrdup_metafy(
+#ifndef DISABLE_DYNAMIC_NSS
+			(str = getlogin()) && *str ?  str :
+#endif
+				cached_username
+			));
 
 #if !defined(HAVE_PUTENV) && !defined(USE_SET_UNSET_ENV)
     /* Copy the environment variables we are inheriting to dynamic *
@@ -1008,6 +1008,11 @@ createparam(char *name, int flags)
 		(oldpm->node.flags & PM_SPECIAL) ||
 		/* POSIXBUILTINS horror: we need to retain 'export' flags */
 		(isset(POSIXBUILTINS) && (oldpm->node.flags & PM_EXPORTED))) {
+		if (oldpm->node.flags & PM_RO_BY_DESIGN) {
+		    zerr("%s: can't change parameter attribute",
+			 name);
+		    return NULL;
+		}
 		oldpm->node.flags &= ~PM_UNSET;
 		if ((oldpm->node.flags & PM_SPECIAL) && oldpm->ename) {
 		    Param altpm =
@@ -2093,7 +2098,8 @@ fetchvalue(Value v, char **pptr, int bracks, int flags)
 	if (sav)
 	    *s = sav;
 	*pptr = s;
-	if (!pm || (pm->node.flags & PM_UNSET))
+	if (!pm || ((pm->node.flags & PM_UNSET) &&
+		    !(pm->node.flags & PM_DECLARED)))
 	    return NULL;
 	if (v)
 	    memset(v, 0, sizeof(*v));
@@ -3055,6 +3061,7 @@ assignsparam(char *s, char *val, int flags)
 	     * Don't warn about anything.
 	     */
 	    flags &= ~ASSPM_WARN;
+	    v->pm->node.flags &= ~PM_DEFAULTED;
 	}
 	*ss = '[';
 	v = NULL;
@@ -3080,6 +3087,7 @@ assignsparam(char *s, char *val, int flags)
     }
     if (flags & ASSPM_WARN)
 	check_warn_pm(v->pm, "scalar", created, 1);
+    v->pm->node.flags &= ~PM_DEFAULTED;
     if (flags & ASSPM_AUGMENT) {
 	if (v->start == 0 && v->end == -1) {
 	    switch (PM_TYPE(v->pm->node.flags)) {
@@ -3232,6 +3240,7 @@ assignaparam(char *s, char **val, int flags)
 
     if (flags & ASSPM_WARN)
 	check_warn_pm(v->pm, "array", created, may_warn_about_nested_vars);
+    v->pm->node.flags &= ~PM_DEFAULTED;
 
     /*
      * At this point, we may have array entries consisting of
@@ -3444,6 +3453,7 @@ sethparam(char *s, char **val)
 	    return NULL;
 	}
     check_warn_pm(v->pm, "associative array", checkcreate, 1);
+    v->pm->node.flags &= ~PM_DEFAULTED;
     setarrvalue(v, val);
     unqueue_signals();
     return v->pm;
@@ -3515,6 +3525,7 @@ assignnparam(char *s, mnumber val, int flags)
 	if (flags & ASSPM_WARN)
 	    check_warn_pm(v->pm, "numeric", 0, 1);
     }
+    v->pm->node.flags &= ~PM_DEFAULTED;
     setnumvalue(v, val);
     unqueue_signals();
     return v->pm;
@@ -3619,6 +3630,7 @@ unsetparam_pm(Param pm, int altflag, int exp)
     else
 	altremove = NULL;
 
+    pm->node.flags &= ~PM_DECLARED;	/* like ksh, not like bash */
     if (!(pm->node.flags & PM_UNSET))
 	pm->gsu.s->unsetfn(pm, exp);
     if (pm->env)
@@ -3652,6 +3664,8 @@ unsetparam_pm(Param pm, int altflag, int exp)
 	}
 
 	zsfree(altremove);
+	if (!(pm->node.flags & PM_SPECIAL))
+	    pm->gsu.s = &stdscalar_gsu;
     }
 
     /*
@@ -4074,7 +4088,7 @@ arrvarsetfn(Param pm, char **x)
 }
 
 /**/
-char *
+mod_export char *
 colonarrgetfn(Param pm)
 {
     char ***dptr = (char ***)pm->u.data;
@@ -4082,7 +4096,7 @@ colonarrgetfn(Param pm)
 }
 
 /**/
-void
+mod_export void
 colonarrsetfn(Param pm, char *x)
 {
     char ***dptr = (char ***)pm->u.data;
@@ -4116,6 +4130,11 @@ tiedarrsetfn(Param pm, char *x)
 
     if (*dptr->arrptr)
 	freearray(*dptr->arrptr);
+    else if (pm->ename) {
+	Param altpm = (Param) paramtab->getnode(paramtab, pm->ename);
+	if (altpm)
+	    altpm->node.flags &= ~PM_DEFAULTED;
+    }
     if (x) {
 	char sepbuf[3];
 	if (imeta(dptr->joinchar))
@@ -4414,7 +4433,7 @@ usernamegetfn(UNUSED(Param pm))
 void
 usernamesetfn(UNUSED(Param pm), char *x)
 {
-#if defined(HAVE_SETUID) && defined(HAVE_GETPWNAM)
+#if defined(HAVE_SETUID) && defined(USE_GETPWNAM)
     struct passwd *pswd;
 
     if (x && (pswd = getpwnam(x)) && (pswd->pw_uid != cached_uid)) {
@@ -4431,7 +4450,7 @@ usernamesetfn(UNUSED(Param pm), char *x)
 	    cached_uid = pswd->pw_uid;
 	}
     }
-#endif /* HAVE_SETUID && HAVE_GETPWNAM */
+#endif /* HAVE_SETUID && USE_GETPWNAM */
     zsfree(x);
 }
 
@@ -5035,6 +5054,7 @@ arrfixenv(char *s, char **t)
 
     if (isset(ALLEXPORT))
 	pm->node.flags |= PM_EXPORTED;
+    pm->node.flags &= ~PM_DEFAULTED;
 
     /*
      * Do not "fix" parameters that were not exported
@@ -5839,8 +5859,9 @@ printparamnode(HashNode hn, int printflags)
     Param peer = NULL;
 
     if (p->node.flags & PM_UNSET) {
-	if (printflags & (PRINT_POSIX_READONLY|PRINT_POSIX_EXPORT) &&
-	    p->node.flags & (PM_READONLY|PM_EXPORTED)) {
+	if ((printflags & (PRINT_POSIX_READONLY|PRINT_POSIX_EXPORT) &&
+	     p->node.flags & (PM_READONLY|PM_EXPORTED)) ||
+	    (p->node.flags & PM_DEFAULTED) == PM_DEFAULTED) {
 	    /*
 	     * Special POSIX rules: show the parameter as readonly/exported
 	     * even though it's unset, but with no value.
@@ -5867,8 +5888,12 @@ printparamnode(HashNode hn, int printflags)
 	 * don't.
 	 */
 	if (printflags & PRINT_POSIX_EXPORT) {
+	    if (!(p->node.flags & PM_EXPORTED))
+		return;
 	    printf("export ");
 	} else if (printflags & PRINT_POSIX_READONLY) {
+	    if (!(p->node.flags & PM_READONLY))
+		return;
 	    printf("readonly ");
 	} else if (locallevel && p->level >= locallevel) {
 	    printf("typeset ");	    /* printf("local "); */

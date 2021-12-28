@@ -2052,7 +2052,7 @@ par_simple(int *cmplx, int nr)
 	    /* Error if preceding assignments */
 	    if (assignments || postassigns)
 		YYERROR(oecused);
-	    if (hasalias && !isset(ALIASFUNCDEF) && argc &&
+	    if (isset(EXECOPT) && hasalias && !isset(ALIASFUNCDEF) && argc &&
 		hasalias != input_hasalias()) {
 		zwarn("defining function based on alias `%s'", hasalias);
 		YYERROR(oecused);
@@ -2509,7 +2509,7 @@ par_cond_2(void)
 	 * In "test" compatibility mode, "! -a ..." and "! -o ..."
 	 * are treated as "[string] [and] ..." and "[string] [or] ...".
 	 */
-	if (!(n_testargs > 1 && (check_cond(*testargs, "a") ||
+	if (!(n_testargs > 2 && (check_cond(*testargs, "a") ||
 				 check_cond(*testargs, "o"))))
 	{
 	    condlex();
@@ -2811,10 +2811,6 @@ freeeprog(Eprog p)
 	DPUTS(p->nref > 0 && (p->flags & EF_HEAP), "Heap EPROG has nref > 0");
 	DPUTS(p->nref < 0 && !(p->flags & EF_HEAP), "Real EPROG has nref < 0");
 	DPUTS(p->nref < -1, "Uninitialised EPROG nref");
-#ifdef MAX_FUNCTION_DEPTH
-	DPUTS(zsh_funcnest >=0 && p->nref > zsh_funcnest + 10,
-	      "Overlarge EPROG nref");
-#endif
 	if (p->nref > 0 && !--p->nref) {
 	    for (i = p->npats, pp = p->pats; i--; pp++)
 		freepatprog(*pp);

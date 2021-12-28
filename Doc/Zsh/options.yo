@@ -474,6 +474,22 @@ item(tt(CASE_MATCH) <D>)(
 Make regular expressions using the tt(zsh/regex) module (including
 matches with tt(=~)) sensitive to case.
 )
+pindex(CASE_PATHS)
+pindex(NO_CASE_PATHS)
+pindex(CASEPATHS)
+pindex(NOCASEPATHS)
+cindex(case-sensitive globbing, option)
+item(tt(CASE_PATHS))(
+If tt(CASE_PATHS) is not set (the default), tt(CASE_GLOB) affects the
+interpretation of em(every) path component, whenever a special
+character appears in em(any) component.  When tt(CASE_PATHS) is set,
+file path components that do em(not) contain special filename
+generation characters are always sensitive to case, thus restricting
+tt(NO_CASE_GLOB) to components that contain globbing characters.
+
+Note that if the filesystem itself is not sensitive to case, then
+tt(CASE_PATHS) has no effect.
+)
 pindex(CSH_NULL_GLOB)
 pindex(NO_CSH_NULL_GLOB)
 pindex(CSHNULLGLOB)
@@ -586,7 +602,7 @@ Substitutions using the tt(:s) and tt(:&) history modifiers are performed
 with pattern matching instead of string matching.  This occurs wherever
 history modifiers are valid, including glob qualifiers and parameters.
 See
-ifzman(the section Modifiers in zmanref(zshexpn))\
+ifzman(the section `Modifiers' in zmanref(zshexpn))\
 ifnzman(noderef(Modifiers)).
 )
 pindex(IGNORE_BRACES)
@@ -1467,7 +1483,7 @@ The check is omitted if the commands run from the previous command line
 included a `tt(jobs)' command, since it is assumed the user is aware that
 there are background or suspended jobs.  A `tt(jobs)' command run from one
 of the hook functions defined in
-ifnzman(the section Special Functions in noderef(Functions))\
+ifnzman(the section `Special Functions' in noderef(Functions))\
 ifzman(the section SPECIAL FUNCTIONS in zmanref(zshmisc))
 is not counted for this purpose.
 )
@@ -1926,6 +1942,16 @@ If the option is set, they will only be shown when parameters are selected
 with the `tt(-m)' option.  The option `tt(-p)' is available whether or not
 the option is set.
 )
+pindex(TYPESET_TO_UNSET)
+pindex(NO_TYPESET_TO_UNSET)
+pindex(TYPESETTOUNSET)
+pindex(NOTYPESETTOUNSET)
+item(tt(TYPESET_TO_UNSET) <K> <S>)(
+When declaring a new parameter with any of the `tt(typeset)' family of
+related commands, the parameter remains unset unless and until a
+value is explicity assigned to it, either in the `tt(typeset)' command
+itself or as a later assignment statement.
+)
 pindex(VERBOSE)
 pindex(NO_VERBOSE)
 pindex(NOVERBOSE)
@@ -2223,7 +2249,8 @@ command found in the path.
 
 Furthermore, the tt(getopts) builtin behaves in a POSIX-compatible
 fashion in that the associated variable tt(OPTIND) is not made
-local to functions.
+local to functions, and its value is calculated differently to match
+other shells.
 
 Moreover, the warning and special exit code from
 tt([[ -o )var(non_existent_option)tt( ]]) are suppressed.
@@ -2303,10 +2330,15 @@ When this option is set, the usual zsh behaviour of executing
 traps for tt(EXIT) on exit from shell functions is suppressed.
 In that case, manipulating tt(EXIT) traps always alters the global
 trap for exiting the shell; the tt(LOCAL_TRAPS) option is
-ignored for the tt(EXIT) trap.  Furthermore, a tt(return) statement
-executed in a trap with no argument passes back from the function the
-value from the surrounding context, not from code executed within the
-trap.
+ignored for the tt(EXIT) trap.
+
+Also, a tt(return) statement executed in a trap with no argument passes
+back from the function the value from the surrounding context, not from
+code executed within the trap.
+
+Furthermore, if a trap is set to be ignored, this state persists when
+a subshell is entered.  Without the option, the trap would be reset to
+its default state at this point.
 )
 pindex(SH_FILE_EXPANSION)
 pindex(NO_SH_FILE_EXPANSION)

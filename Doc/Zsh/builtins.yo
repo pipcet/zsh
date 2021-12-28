@@ -893,6 +893,10 @@ without affecting the other.  A typical idiom is that var(oldfn) is the
 name of a library shell function which is then redefined to call
 tt(newfn), thereby installing a modified version of the function.
 
+em(The )tt(-M)em( and )tt(+M)em( flags)
+cindex(defining mathematical functions)
+cindex(functions, defining mathematical)
+
 Use of the tt(-M) option may not be combined with any of the options
 handled by tt(typeset -f).
 
@@ -914,9 +918,55 @@ expressions.  The name of the function in tt($0) is var(mathfn) (not
 var(shellfn) as would usually be the case), provided the option
 tt(FUNCTION_ARGZERO) is in effect.  The positional parameters in the shell
 function correspond to the arguments of the mathematical function call.
-The result of the last arithmetical expression evaluated
-inside the shell function (even if it is a form that normally only returns
-a status) gives the result of the mathematical function.
+
+The result of the last arithmetical expression evaluated inside the shell
+function gives the result of the mathematical function.  This is not limited to
+arithmetic substitutions of the form tt($+LPAR()+LPAR())var(...)tt(+RPAR()+RPAR()),
+but also includes arithmetical expressions evaluated in any other way, including
+by the tt(let) builtin,
+by tt(+LPAR()+LPAR())var(...)tt(+RPAR()+RPAR()) statements,
+and even
+by the tt(return) builtin
+and
+by array subscripts.
+Therefore, care must be taken not to use syntactical constructs that perform
+arithmetic evaluation after evaluating what is to be the result of the function.
+For example:
+
+findex(zmath_cube)
+findex(cube)
+example(# WRONG
+zmath_cube+LPAR()+RPAR() {
+  (( $1 * $1 * $1 ))
+  return 0
+}
+functions -M cube 1 1 zmath_cube
+print $(( cube+LPAR()3+RPAR() )))
+
+This will print `tt(0)' because of the tt(return).
+
+Commenting the tt(return) out would lead to a different problem: the
+tt(+LPAR()+LPAR())var(...)tt(+RPAR()+RPAR()) statement would become
+the last statement in the function, so the em(return status) (tt($?)) of the
+function would be non-zero (indicating failure) whenever the em(arithmetic
+result) of the function would happen to be zero (numerically):
+
+example(# WRONG
+zmath_cube+LPAR()+RPAR() {
+  (( $1 * $1 * $1 ))
+}
+functions -M cube 1 1 zmath_cube
+print $(( cube+LPAR()0+RPAR() )))
+
+Instead, the tt(true) builtin can be used:
+
+example(# RIGHT
+zmath_cube+LPAR()+RPAR() {
+  (( $1 * $1 * $1 ))
+  true
+}
+functions -M cube 1 1 zmath_cube
+print $(( cube+LPAR()3+RPAR() )))
 
 If the additional option tt(-s) is given to tt(functions -M), the
 argument to the function is a single string: anything between the
@@ -924,6 +974,12 @@ opening and matching closing parenthesis is passed to the function as a
 single argument, even if it includes commas or white space.  The minimum
 and maximum argument specifiers must therefore be 1 if given.  An empty
 argument list is passed as a zero-length string.
+Thus, the following string function takes a single argument, including
+the commas, and prints 11:
+
+example(stringfn+LPAR()RPAR() { (( $#1 )); true }
+functions -Ms stringfn
+print $(( stringfn+LPAR()foo,bar,rod+RPAR() )))
 
 tt(functions -M) with no arguments lists all such user-defined functions in
 the same form as a definition.  With the additional option tt(-m) and
@@ -935,19 +991,6 @@ additional option tt(-m) the arguments are treated as patterns and
 all functions whose var(mathfn) matches the pattern are removed.  Note
 that the shell function implementing the behaviour is not removed
 (regardless of whether its name coincides with var(mathfn)).
-
-For example, the following prints the cube of 3:
-
-example(zmath_cube+LPAR()RPAR() { (( $1 * $1 * $1 )) }
-functions -M cube 1 1 zmath_cube
-print $(( cube+LPAR()3+RPAR() )))
-
-The following string function takes a single argument, including
-the commas, so prints 11:
-
-example(stringfn+LPAR()RPAR() { (( $#1 )) }
-functions -Ms stringfn
-print $(( stringfn+LPAR()foo,bar,rod+RPAR() )))
 )
 module(getcap)(zsh/cap)
 findex(getln)
@@ -982,7 +1025,8 @@ vindex(OPTARG, use of)
 The first option to be examined may be changed by explicitly assigning
 to tt(OPTIND).  tt(OPTIND) has an initial value of tt(1), and is
 normally set to tt(1) upon entry to a shell function and restored
-upon exit (this is disabled by the tt(POSIX_BUILTINS) option).  tt(OPTARG)
+upon exit.  (The tt(POSIX_BUILTINS) option disables this, and also changes
+the way the value is calculated to match other shells.)  tt(OPTARG)
 is not reset and retains its value from the most recent call to
 tt(getopts).  If either of tt(OPTIND) or tt(OPTARG) is explicitly
 unset, it remains unset, and the index or option argument is not
@@ -1190,14 +1234,6 @@ item(tt(local) [ {tt(PLUS())|tt(-)}tt(AHUahlprtux) ] \
 Same as tt(typeset), except that the options tt(-g), and
 tt(-f) are not permitted.  In this case the tt(-x) option does not force
 the use of tt(-g), i.e. exported variables will be local to functions.
-)
-findex(log)
-vindex(watch, use of)
-cindex(watching users)
-cindex(users, watching)
-item(tt(log))(
-List all users currently logged in who are affected by
-the current setting of the tt(watch) parameter.
 )
 findex(logout)
 item(tt(logout) [ var(n) ])(
@@ -1449,7 +1485,7 @@ findex(read)
 vindex(IFS, use of)
 redef(SPACES)(0)(tt(ifztexi(NOTRANS(@ @ @ @ @ ))ifnztexi(     )))
 xitem(tt(read )[ tt(-rszpqAclneE) ] [ tt(-t) [ var(num) ] ] [ tt(-k) [ var(num) ] ] [ tt(-d) var(delim) ])
-item(SPACES()[ tt(-u) var(n) ] [ var(name)[tt(?)var(prompt)] ] [ var(name) ...  ])(
+item(SPACES()[ tt(-u) var(n) ] [ [var(name)][tt(?)var(prompt)] ] [ var(name) ...  ])(
 vindex(REPLY, use of)
 vindex(reply, use of)
 Read one line and break it into fields using the characters
@@ -1583,7 +1619,13 @@ cindex(functions, returning from)
 item(tt(return) [ var(n) ])(
 Causes a shell function or `tt(.)' script to return to
 the invoking script with the return status specified by
-an arithmetic expression var(n). If var(n)
+an arithmetic expression var(n).  
+For example, the following prints `tt(42)':
+
+example(() { integer foo=40; return "foo + 2" }
+echo $?)
+
+If var(n)
 is omitted, the return status is that of the last command
 executed.
 
@@ -1594,7 +1636,7 @@ will return to whatever it was previously processing; with a non-zero
 status, the shell will behave as interrupted except that the return
 status of the trap is retained.  Note that the numeric value of the signal
 which caused the trap is passed as the first argument, so the statement
-`tt(return $((128PLUS()$1)))' will return the same status as if the signal
+`tt(return "128PLUS()$1")' will return the same status as if the signal
 had not been trapped.
 )
 module(sched)(zsh/sched)
@@ -1872,7 +1914,11 @@ ifnzman(noderef(Local Parameters))\
 retain their special attributes when made local.
 
 For each var(name)tt(=)var(value) assignment, the parameter
-var(name) is set to var(value).
+var(name) is set to var(value).  If the assignment is omitted and var(name)
+does em(not) refer to an existing parameter, a new parameter is intialized
+to empty string, zero, or empty array (as appropriate), em(unless) the
+shell option tt(TYPESET_TO_UNSET) is set.  When that option is set,
+the parameter attributes are recorded but the parameter remains unset.
 
 If the shell option tt(TYPESET_SILENT) is not set, for each remaining
 var(name) that refers to a parameter that is already set, the name and

@@ -84,7 +84,7 @@ int nohistsave;
 /* error flag: bits from enum errflag_bits */
 
 /**/
-mod_export int errflag;
+mod_export volatile int errflag;
 
 /*
  * State of trap return value.  Value is from enum trap_state.
@@ -122,7 +122,7 @@ int subsh;
 /* != 0 if we have a return pending */
 
 /**/
-mod_export int retflag;
+mod_export volatile int retflag;
 
 /**/
 long lastval2;
@@ -1033,7 +1033,8 @@ entersubsh(int flags, struct entersubsh_ret *retp)
 
     if (!(flags & ESUB_KEEPTRAP))
 	for (sig = 0; sig < SIGCOUNT; sig++)
-	    if (!(sigtrapped[sig] & ZSIG_FUNC))
+	    if (!(sigtrapped[sig] & ZSIG_FUNC) &&
+		!(isset(POSIXTRAPS) && (sigtrapped[sig] & ZSIG_IGNORED)))
 		unsettrap(sig);
     monitor = isset(MONITOR);
     job_control_ok = monitor && (flags & ESUB_JOB_CONTROL) && isset(POSIXJOBS);
@@ -1268,7 +1269,9 @@ execsimple(Estate state)
     } else {
 	int q = queue_signal_level();
 	dont_queue_signals();
-	if (code == WC_FUNCDEF)
+	if (errflag)
+	    lv = errflag;
+	else if (code == WC_FUNCDEF)
 	    lv = execfuncdef(state, NULL);
 	else
 	    lv = (execfuncs[code - WC_CURSH])(state, 0);
@@ -2901,11 +2904,13 @@ execcmd_exec(Estate state, Execcmd_params eparams,
 	    pushnode(args, dupstring("fg"));
     }
 
-    if ((how & Z_ASYNC) || output) {
+    if ((how & Z_ASYNC) || output ||
+	(last1 == 2 && input && EMULATION(EMULATE_SH))) {
 	/*
-	 * If running in the background, or not the last command in a
-	 * pipeline, we don't need any of the rest of this function to
-	 * affect the state in the main shell, so fork immediately.
+	 * If running in the background, not the last command in a
+	 * pipeline, or the last command in a multi-stage pipeline
+	 * in sh mode, we don't need any of the rest of this function
+	 * to affect the state in the main shell, so fork immediately.
 	 *
 	 * In other cases we may need to process the command line
 	 * a bit further before we make the decision.
@@ -3949,7 +3954,7 @@ execcmd_exec(Estate state, Execcmd_params eparams,
 	    if (type == WC_AUTOFN) {
 		/*
 		 * We pre-loaded this to get any redirs.
-		 * So we execuate a simplified function here.
+		 * So we execute a simplified function here.
 		 */
 		lastval =  execautofn_basic(state, do_exec);
 	    } else
@@ -4617,7 +4622,7 @@ getoutput(char *cmd, int qt)
     char *s;
 
     int onc = nocomments;
-    nocomments = (interact && unset(INTERACTIVECOMMENTS));
+    nocomments = (interact && !sourcelevel && unset(INTERACTIVECOMMENTS));
     prog = parse_string(cmd, 0);
     nocomments = onc;
 

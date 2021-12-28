@@ -31,6 +31,7 @@ arguments=(
   '(-M)-N+[extract name list from specified system]:system file:_files'
   '(-o -n --oldest --newest)'{-n,--newest}'[match newest process]'
   '(-o -n --oldest --newest)'{-o,--oldest}'[match oldest process]'
+  '(-O --older)'{-O+,--older=}'[select where older than specified age]:age (seconds)'
   '(-P --parent)'{-P+,--parent=}'[match only on specified parent process IDs]: :->ppid'
   '(-l)-q[suppress normal output]'
   '(-r --runstates)'{-r+,--runstates}'[match runstates]:run state:compadd -S "" D I R S T t W X Z'
@@ -62,8 +63,8 @@ arguments=(
 case $OSTYPE in
   linux*)
     # Note: We deliberately exclude -v but not --inverse from pkill
-    pgopts=acdFfGghLlnoPrstUuVvwx-
-    pkopts=ceFfGghLnoPstUuVx-
+    pgopts=acdFfGghLlnoOPrstUuVvwx-
+    pkopts=ceFfGghLnoOPstUuVx-
     arguments=(
       ${arguments:#((#s)|*\))(\*|)-[acl]*}
       '(-c --count)'{-c,--count}'[display count of matching processes]'
@@ -125,6 +126,10 @@ else
   fi
 fi
 
+if [[ $OSTYPE = dragonfly* ]]; then
+  arguments+=( '(-t)-T[match only processes associated with the current terminal]' )
+fi
+
 arguments+=( $sig_arguments + o '*: :->pname' )
 
 [[ $OSTYPE == linux* ]] || aopts+=( -A '*-' )
@@ -163,11 +168,21 @@ case $state in
   (pname)
     local ispat="pattern matching "
     if (( ${+opt_args[-x]} )); then
-      ispat=""
+      ispat+="full "
     fi
     if (( ${+opt_args[-f]} )); then
-      _wanted process-args expl $ispat'process command line' \
-	compadd ${${(f)"$(_call_program process-args ps -A -o args=)"}% *}
+      local -a opts=( -lf )
+      [[ $OSTYPE == linux* ]] && opts=( -a )
+      local -a matches=( ${(f)"$(
+              _call_program process-args pgrep ${(@q)opts} -- \
+                  ${(q)${${:-$PREFIX$SUFFIX}:-.\*}}
+          )"} )
+      local -a displ=( "${${matches[@]//:/\:}[@]/ /:}" )
+      matches=( "${matches[@]##<-> }" )
+
+      local desc=$ispat'process command line'
+      _description process-args expl "$desc"
+      _describe -t process-args "$desc" displ matches "$@" -U "$expl[@]"
     else
       _wanted processes-names expl $ispat'process name' _process_names -a -t
     fi

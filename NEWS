@@ -7,6 +7,18 @@ Note also the list of incompatibilities in the README file.
 Changes since 5.8
 -----------------
 
+When unsetting a hash element, the string enclosed in square brackets is
+interpreted literally after any normal command-line-argument expansions.
+Thus
+  unset "hash[$key]"
+first expands $key as usual for a double-quoted string, and then interprets
+that result as the exact hash element to unset.  This differs from previous
+versions of the shell, which would also remove a leading backslash for an
+unusual subset of characters in the expansion of $key.  Note this also
+means, for example, that now
+  unset 'hash[ab]cd]'
+unsets the element with key "ab]cd" rather than silently doing nothing.
+
 The function command learnt a -T option to declare a function and enable
 tracing for it simultaneously.
 
@@ -34,6 +46,12 @@ The XTRACE option is now disabled while running user-defined completion
 widgets.  This corresponds to long-standing behavior of other user ZLE
 widgets.  Use the _complete_debug widget to capture XTRACE output, or
 use "functions -T" to enable tracing of specific completion functions.
+
+With the new TYPESET_TO_UNSET option set, "typeset foo" leaves foo unset,
+in contrast to the default behavior which assigns foo="".  Any parameter
+attributes such as numeric type, sorting, and padding are retained until
+the parameter is explicitly unset or a conflicting value is assigned.
+This is similar to default behavior of bash and ksh.
 
 Changes from 5.7.1-test-3 to 5.8
 --------------------------------
@@ -553,7 +571,7 @@ Here is a summary of the most significant changes:
 - The zshroadmap manual page provides a slightly more helpful
   introduction to the shell manual than was previously available.
 
-- There have been some notable enhancements to POSIX comptability
+- There have been some notable enhancements to POSIX compatibility
   when the shell is in a corresponding emulation (e.g. "emulate sh").
 
 Expansion (parameters, globbing, etc.) and redirection
